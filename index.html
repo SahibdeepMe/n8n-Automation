@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sahibdeep | Workflow Infrastructure</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d0d0d;
+            overflow: hidden;
+            margin: 0;
+            color: #fff;
+            user-select: none;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 1;
+            cursor: grab;
+        }
+        #canvas-container:active { cursor: grabbing; }
+
+        .node-label {
+            position: absolute;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 6px 10px;
+            pointer-events: auto;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+            z-index: 10;
+            transform: translate(-50%, -50%);
+            white-space: nowrap;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .node-label:hover {
+            border-color: #555;
+            background: #252525;
+        }
+
+        .node-icon {
+            width: 20px; height: 20px;
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+        }
+
+        .node-text { font-size: 11px; font-weight: 600; color: #ccc; }
+        .status-dot { width: 5px; height: 5px; background: #4caf50; border-radius: 50%; }
+
+        /* Detail Modal */
+        #details-panel {
+            position: fixed;
+            right: -400px; top: 48px; bottom: 0;
+            width: 350px;
+            background: #161616;
+            border-left: 1px solid #333;
+            z-index: 200;
+            padding: 24px;
+            transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+        }
+        #details-panel.open { right: 0; }
+
+        /* Magician Info Panel - YouTube Styled 'i' */
+        .info-magician-container {
+            position: fixed;
+            top: 64px;
+            right: 24px;
+            z-index: 150;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+        }
+        
+        .info-btn {
+            width: 36px;
+            height: 36px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #fff;
+        }
+        .info-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+        /* Icon styles for the 'i' */
+        .info-icon {
+            font-family: serif;
+            font-style: italic;
+            font-weight: bold;
+            font-size: 18px;
+            margin-top: -1px;
+        }
+
+        .info-popover {
+            width: 300px;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 12px;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.8);
+        }
+        .info-magician-container:hover .info-popover {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .grid-bg {
+            position: fixed;
+            inset: 0;
+            background-image: radial-gradient(#252525 1px, transparent 0);
+            background-size: 40px 40px;
+            z-index: 0;
+        }
+
+        .top-bar {
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            height: 48px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #333;
+            display: flex; align-items: center; padding: 0 16px;
+            z-index: 100; justify-content: space-between;
+        }
+
+        .btn-n8n { background: #ff6d5a; color: white; padding: 4px 8px; border-radius: 4px; font-weight: 800; font-size: 10px; font-style: italic; }
+        .close-btn { cursor: pointer; color: #666; transition: color 0.2s; }
+        .close-btn:hover { color: #fff; }
+
+        .action-btn {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            color: #eee;
+            font-size: 11px;
+            padding: 4px 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .action-btn:hover {
+            background: #3a3a3a;
+            border-color: #666;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="grid-bg" id="grid"></div>
+
+    <div class="top-bar">
+        <div class="flex items-center gap-3">
+            <div class="btn-n8n">n8n</div>
+            <span class="text-xs font-medium text-zinc-500 uppercase tracking-wider">Workflow /</span>
+            <span class="text-xs font-bold text-zinc-200">Auto Image Generator</span>
+        </div>
+        
+        <div class="flex items-center gap-3">
+            <a href="https://sahibdeepme.github.io/404/" target="_blank" class="action-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3"/></svg>
+                Workflow Link
+            </a>
+            <button onclick="downloadJSON()" class="action-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                Download JSON
+            </button>
+        </div>
+    </div>
+
+    <!-- YouTube-styled Info Panel -->
+    <div class="info-magician-container">
+        <div class="info-btn">
+            <span class="info-icon">i</span>
+        </div>
+        <div class="info-popover">
+            <div class="flex items-center gap-2 mb-4">
+                <div class="w-8 h-8 rounded-full bg-[#ff6d5a] flex items-center justify-center text-[10px] font-bold">SM</div>
+                <div>
+                    <h3 class="text-sm font-bold text-white">Automation Magician</h3>
+                    <p class="text-[10px] text-zinc-500 uppercase">System Architect</p>
+                </div>
+            </div>
+            
+            <p class="text-xs text-zinc-400 leading-relaxed mb-4">
+                This infrastructure automates the bridge between <span class="text-zinc-200">YouTube Content</span> and <span class="text-zinc-200">AI Intelligence</span>. By syncing real-time data from Google Sheets, we ensure every AI response is contextually grounded.
+            </p>
+
+            <div class="space-y-3 mb-4">
+                <div class="flex items-start gap-2">
+                    <div class="mt-1 w-1 h-1 rounded-full bg-[#ff6d5a]"></div>
+                    <p class="text-[11px] text-zinc-300"><span class="font-bold">What we do:</span> Turn static workflows into dynamic, code-driven AI assistants.</p>
+                </div>
+                <div class="flex items-start gap-2">
+                    <div class="mt-1 w-1 h-1 rounded-full bg-[#ff6d5a]"></div>
+                    <p class="text-[11px] text-zinc-300"><span class="font-bold">Customization:</span> You can edit <code class="bg-black px-1 rounded">config.py</code> to rewire this entire logic.</p>
+                </div>
+            </div>
+
+            <div class="p-3 bg-zinc-900/50 rounded-lg border border-zinc-800 border-dashed">
+                <p class="text-[10px] text-zinc-500 italic">
+                    "This visual represents the actual code running your automation."
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div id="details-panel">
+        <div class="flex justify-between items-start mb-6">
+            <div id="modal-icon-box" class="w-10 h-10 rounded flex items-center justify-center text-xl"></div>
+            <div class="close-btn" onclick="closeDetails()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </div>
+        </div>
+        <h2 id="modal-title" class="text-xl font-bold mb-1"></h2>
+        <p id="modal-type" class="text-[10px] uppercase tracking-widest text-zinc-500 mb-4 font-bold"></p>
+        
+        <div class="space-y-6">
+            <section>
+                <h3 class="text-xs font-bold text-zinc-400 uppercase mb-2">Technical Feature</h3>
+                <p id="modal-feature" class="text-sm text-zinc-200 leading-relaxed"></p>
+            </section>
+            <section>
+                <h3 class="text-xs font-bold text-zinc-400 uppercase mb-2">Why it's here</h3>
+                <p id="modal-why" class="text-sm text-zinc-400 leading-relaxed italic"></p>
+            </section>
+            <section>
+                <h3 class="text-xs font-bold text-zinc-400 uppercase mb-2">Description</h3>
+                <p id="modal-desc" class="text-sm text-zinc-300 leading-relaxed"></p>
+            </section>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+    <div id="node-labels-container"></div>
+
+    <script>
+        let scene, camera, renderer, nodesGroup, gridEl;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let zoom = 22;
+
+        const workflowData = [
+            { id: "trig", name: "When chat message received", icon: "💬", color: "#ff6d5a", x: -14, y: 2, 
+              feature: "Websocket Trigger", 
+              why: "Acts as the starting gate for the image generation process.", 
+              desc: "This node initiates the workflow as soon as a user sends a message through the chat interface. It captures the user input for processing." },
+            
+            { id: "agent1", name: "AI Agent", icon: "🤖", color: "#6366f1", x: -8, y: 2, 
+              feature: "LLM Reasoning Core", 
+              why: "The brain that decides which tools (Sheets/Portfolio) to use.", 
+              desc: "A sophisticated agent that interprets user intent. It coordinates with connected tools to gather data before providing a response." },
+            
+            { id: "mem_sim", name: "Simple Memory", icon: "🧠", color: "#fbbf24", x: -4, y: 6, 
+              feature: "Conversation Buffer", 
+              why: "Maintains context between messages so the AI doesn't forget the previous prompt.", 
+              desc: "Stores short-term interaction history. This is connected to both agents to ensure they have the same context when handing off tasks." },
+            
+            { id: "sheets", name: "Google Sheets", icon: "📊", color: "#10b981", x: -10, y: 7, 
+              feature: "Context Database", 
+              why: "Retrieves specific data rows to augment the AI's limited knowledge.", 
+              desc: "Directly connects to Google Sheets to read specific entries. We added this to provide the agent with ground-truth data from our records." },
+            
+            { id: "router", name: "OpenRouter Chat Model", icon: "🧠", color: "#8b5cf6", x: -4, y: 9, 
+              feature: "LLM API Wrapper", 
+              why: "Gives access to top-tier models like GPT-4o via a unified endpoint.", 
+              desc: "An abstraction layer that handles model requests. It processes the prompt after the agent has gathered all necessary context." },
+            
+            { id: "agent2", name: "AI Agent 1", icon: "🤖", color: "#6366f1", x: 2, y: 2, 
+              feature: "Output Refiner", 
+              why: "Specifically cleans and formats the data retrieved by Agent 1.", 
+              desc: "The secondary agent in the chain. It takes the raw output and formats it properly for the end-user display." },
+            
+            { id: "tool", name: "portfolio", icon: "📂", color: "#f59e0b", x: -4, y: -2, 
+              feature: "HTTP Request Tool", 
+              why: "Retrieves technical metadata and file paths for assets.", 
+              desc: "A core utility tool designed for asset indexing. It fetches raw data and file metadata required for the workflow's generation phase, functioning purely as a data retriever without direct visual output." },
+            
+            { id: "mem_mgr", name: "Chat Memory Manager", icon: "💾", color: "#06b6d4", x: 8, y: 2, 
+              feature: "PostgreSQL Persistence", 
+              why: "Ensures long-term memory even after the session is closed.", 
+              desc: "Handles persistent memory storage. Unlike the Simple Memory node, this saves the interaction history into a database for future recall." },
+            
+            { id: "chat", name: "Chat", icon: "✨", color: "#ec4899", x: 14, y: 2, 
+              feature: "Response Node", 
+              why: "The final step that presents the generated image and text back to the user.", 
+              desc: "Closes the loop by sending the processed and formatted response back to the chat interface." }
+        ];
+
+        function downloadJSON() {
+            const jsonData = {
+                name: "Auto Image Generator (View Images)",
+                nodes: workflowData.map(node => ({
+                    name: node.name,
+                    type: node.feature,
+                    position: [node.x * 100, node.y * 100]
+                })),
+                active: true,
+                settings: { executionOrder: "v1" }
+            };
+            
+            const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = "Auto Image Generator (View Images).json";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            nodesGroup = new THREE.Group();
+            scene.add(nodesGroup);
+            
+            gridEl = document.getElementById('grid');
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = zoom;
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            scene.add(new THREE.AmbientLight(0xffffff, 1));
+            
+            workflowData.forEach((data) => {
+                const geometry = new THREE.BoxGeometry(2, 1, 0.2);
+                const material = new THREE.MeshStandardMaterial({ color: 0x222222 });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.set(data.x, data.y, 0);
+                
+                const hGeo = new THREE.BoxGeometry(2, 0.1, 0.21);
+                const hMat = new THREE.MeshStandardMaterial({ color: data.color });
+                const header = new THREE.Mesh(hGeo, hMat);
+                header.position.y = 0.45;
+                mesh.add(header);
+
+                nodesGroup.add(mesh);
+                data.mesh = mesh;
+
+                const label = document.createElement('div');
+                label.className = 'node-label';
+                label.onclick = (e) => { e.stopPropagation(); showDetails(data); };
+                label.innerHTML = `
+                    <div class="node-icon" style="background: ${data.color}20; color: ${data.color}">${data.icon}</div>
+                    <div class="node-text">${data.name}</div>
+                    <div class="status-dot"></div>
+                `;
+                document.getElementById('node-labels-container').appendChild(label);
+                data.labelEl = label;
+            });
+
+            // Logic-based Connections
+            drawWire("trig", "agent1");
+            drawWire("agent1", "agent2");
+            drawWire("agent2", "mem_mgr");
+            drawWire("mem_mgr", "chat");
+            
+            drawWire("agent1", "sheets", true);
+            drawWire("agent1", "router", true);
+            drawWire("agent1", "tool", true);
+
+            drawWire("mem_sim", "agent1", true);
+            drawWire("mem_sim", "agent2", true);
+            drawWire("mem_sim", "mem_mgr", true);
+
+            setupInteraction();
+            animate();
+        }
+
+        function drawWire(startId, endId, curved = false) {
+            const startNode = workflowData.find(d => d.id === startId);
+            const endNode = workflowData.find(d => d.id === endId);
+            if(!startNode || !endNode) return;
+
+            const start = startNode.mesh.position;
+            const end = endNode.mesh.position;
+            
+            let points = [];
+            const midX = (start.x + end.x) / 2;
+
+            if (curved) {
+                points = [
+                    start,
+                    new THREE.Vector3(midX, start.y, 0),
+                    new THREE.Vector3(midX, end.y, 0),
+                    end
+                ];
+            } else {
+                points = [start, end];
+            }
+
+            const curve = new THREE.CatmullRomCurve3(points);
+            const geometry = new THREE.TubeGeometry(curve, 64, 0.03, 8, false);
+            const material = new THREE.MeshBasicMaterial({ color: 0x333333, transparent: true, opacity: 0.6 });
+            nodesGroup.add(new THREE.Mesh(geometry, material));
+        }
+
+        function showDetails(data) {
+            const panel = document.getElementById('details-panel');
+            document.getElementById('modal-title').innerText = data.name;
+            document.getElementById('modal-icon-box').innerText = data.icon;
+            document.getElementById('modal-icon-box').style.background = data.color + "20";
+            document.getElementById('modal-icon-box').style.color = data.color;
+            document.getElementById('modal-type').innerText = data.id.includes('trig') ? "Trigger Node" : "Execution Node";
+            document.getElementById('modal-feature').innerText = data.feature;
+            document.getElementById('modal-why').innerText = data.why;
+            document.getElementById('modal-desc').innerText = data.desc;
+            
+            panel.classList.add('open');
+            
+            const targetX = -data.x;
+            const targetY = -data.y;
+            
+            let count = 0;
+            const interval = setInterval(() => {
+                nodesGroup.position.x += (targetX - nodesGroup.position.x) * 0.1;
+                nodesGroup.position.y += (targetY - nodesGroup.position.y) * 0.1;
+                count++;
+                if(count > 20) clearInterval(interval);
+            }, 16);
+        }
+
+        function closeDetails() {
+            document.getElementById('details-panel').classList.remove('open');
+        }
+
+        function setupInteraction() {
+            const container = document.getElementById('canvas-container');
+            container.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+                closeDetails();
+            });
+            window.addEventListener('mouseup', () => isDragging = false);
+            window.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    const deltaX = (e.clientX - previousMousePosition.x) * 0.02;
+                    const deltaY = (e.clientY - previousMousePosition.y) * 0.02;
+                    nodesGroup.position.x += deltaX;
+                    nodesGroup.position.y -= deltaY;
+                    gridEl.style.backgroundPosition = `${nodesGroup.position.x * 20}px ${-nodesGroup.position.y * 20}px`;
+                    previousMousePosition = { x: e.clientX, y: e.clientY };
+                }
+            });
+            window.addEventListener('wheel', (e) => {
+                zoom += e.deltaY * 0.01;
+                zoom = Math.max(10, Math.min(50, zoom));
+                camera.position.z = zoom;
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            workflowData.forEach(data => {
+                const vector = data.mesh.position.clone();
+                vector.add(nodesGroup.position);
+                vector.project(camera);
+                const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (vector.y * -0.5 + 0.5) * window.innerHeight;
+                data.labelEl.style.left = `${x}px`;
+                data.labelEl.style.top = `${y + (45 * (22/zoom))}px`;
+                data.labelEl.style.transform = `translate(-50%, -50%) scale(${Math.max(0.6, 22/zoom)})`;
+            });
+            renderer.render(scene, camera);
+        }
+
+        window.onload = init;
+    </script>
+</body>
+</html>
